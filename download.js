@@ -269,7 +269,15 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error("\n❌ 发生错误:", err.message);
-  process.exit(1);
-});
+function waitForExit() {
+  return new Promise((resolve) => {
+    console.log("\n按回车键退出...");
+    process.stdin.once("data", resolve);
+  });
+}
+
+main()
+  .catch((err) => {
+    console.error("\n发生错误:", err.message);
+  })
+  .finally(() => waitForExit().then(() => process.exit()));
