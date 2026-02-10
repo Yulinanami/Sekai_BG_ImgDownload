@@ -89,11 +89,11 @@ async function getPngFilesInDir(prefix) {
  * 获取所有背景图 PNG 文件列表（并发扫描目录）
  */
 async function getAllPngFiles() {
-  console.log("📂 正在获取背景图目录列表...");
+  console.log("[1/3] 正在获取背景图目录列表...");
   const subDirs = await getAllSubDirs(PREFIX);
   console.log(`   找到 ${subDirs.length} 个子目录`);
 
-  console.log("🔍 正在并发扫描每个目录中的 PNG 文件...");
+  console.log("[2/3] 正在并发扫描每个目录中的 PNG 文件...");
   const allFiles = [];
   let scanned = 0;
   const total = subDirs.length;
@@ -134,7 +134,7 @@ async function getAllPngFiles() {
   return allFiles;
 }
 
-// ======================== 下载逻辑 ========================
+// 下载逻辑
 
 /**
  * 下载单个文件（支持重试）
@@ -182,7 +182,7 @@ async function downloadAll(fileKeys) {
 
   function printProgress() {
     process.stdout.write(
-      `\r⬇️  进度: ${completed}/${total} | ✅ 下载: ${downloaded} | ⏭️ 跳过: ${skipped} | ❌ 失败: ${failed}`,
+      `\r  进度: ${completed}/${total} | 下载: ${downloaded} | 跳过: ${skipped} | 失败: ${failed}`,
     );
   }
 
@@ -219,7 +219,7 @@ async function downloadAll(fileKeys) {
   return { downloaded, skipped, failed, failedFiles };
 }
 
-// ======================== 主流程 ========================
+// 主流程
 
 async function main() {
   console.log("========================================");
@@ -233,18 +233,18 @@ async function main() {
 
   // 2. 获取所有 PNG 文件列表
   const allFiles = await getAllPngFiles();
-  console.log(`\n📋 共找到 ${allFiles.length} 个 PNG 文件`);
+  console.log(`\n共找到 ${allFiles.length} 个 PNG 文件`);
 
   // 3. 应用数量限制
   const filesToDownload =
     DOWNLOAD_LIMIT < Infinity ? allFiles.slice(0, DOWNLOAD_LIMIT) : allFiles;
 
   if (DOWNLOAD_LIMIT < Infinity) {
-    console.log(`⚠️  限制下载数量: ${DOWNLOAD_LIMIT}`);
+    console.log(`[注意] 限制下载数量: ${DOWNLOAD_LIMIT}`);
   }
 
-  console.log(`📁 下载目录: ${OUTPUT_DIR}`);
-  console.log(`🔄 并发数: ${CONCURRENCY}\n`);
+  console.log(`下载目录: ${OUTPUT_DIR}`);
+  console.log(`并发数: ${CONCURRENCY}\n`);
 
   // 4. 开始下载
   console.log("开始下载...\n");
@@ -256,10 +256,10 @@ async function main() {
   console.log("\n========================================");
   console.log("  下载完成!");
   console.log("========================================");
-  console.log(`  ⏱️  耗时: ${elapsed}s`);
-  console.log(`  ✅ 成功下载: ${result.downloaded}`);
-  console.log(`  ⏭️  已跳过: ${result.skipped}`);
-  console.log(`  ❌ 下载失败: ${result.failed}`);
+  console.log(`  耗时: ${elapsed}s`);
+  console.log(`  成功下载: ${result.downloaded}`);
+  console.log(`  已跳过: ${result.skipped}`);
+  console.log(`  下载失败: ${result.failed}`);
 
   if (result.failedFiles.length > 0) {
     console.log("\n失败文件列表:");
