@@ -1,0 +1,64 @@
+name: Build macOS
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "ver=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "ver=v0.0.0" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install pkg
+        run: npm install -g pkg
+
+      - name: Build executable
+        run: pkg download.js --target node18-macos-x64 --output Sekai_BG_ImgDownload_${{ steps.version.outputs.ver }}_macOS_x64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sekai_BG_ImgDownload_${{ steps.version.outputs.ver }}_macOS_x64
+          path: Sekai_BG_ImgDownload_${{ steps.version.outputs.ver }}_macOS_x64
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Get version
+        id: version
+        run: echo "ver=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Sekai_BG_ImgDownload_${{ steps.version.outputs.ver }}_macOS_x64
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
