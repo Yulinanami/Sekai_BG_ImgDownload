@@ -4,9 +4,11 @@
 
 ## 原理
 
-直接调用 Sekai Viewer 的 S3/MinIO 存储 API（`storage.sekai.best`），无需浏览器渲染，高效稳定。
+直接调用 Sekai Viewer 的 S3/MinIO 存储 API
 
 ## 使用方法
+
+运行run.bat即可，或者自行按照以下步骤操作
 
 ### 安装依赖
 
