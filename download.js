@@ -7,7 +7,7 @@ const { pipeline } = require("stream/promises");
 // 配置
 const BASE_URL = "https://storage.sekai.best/sekai-jp-assets";
 const PREFIX = "scenario/background/";
-const OUTPUT_DIR = path.join(__dirname, "downloads");
+const OUTPUT_DIR = path.join(process.cwd(), "downloads");
 const CONCURRENCY = 15; // 并发下载数
 const MAX_RETRIES = 3; // 最大重试次数
 const MAX_KEYS = 500; // 每次 API 请求返回的最大数量
