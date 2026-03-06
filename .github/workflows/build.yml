@@ -23,9 +23,9 @@ jobs:
             output_suffix: Linux_x64
             output_extension: ""
           - name: macOS
-            runner: macos-latest
-            target: node18-macos-x64
-            output_suffix: macOS_x64
+            runner: macos-15
+            target: node18-macos-arm64
+            output_suffix: macOS_arm64
             output_extension: ""
           - name: Windows
             runner: windows-latest
