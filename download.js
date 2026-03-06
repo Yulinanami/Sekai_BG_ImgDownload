@@ -17,6 +17,11 @@ const REQUEST_TIMEOUT = 30000; // 单次请求超时时间
 const RETRY_CONCURRENCY = Math.max(3, Math.floor(CONCURRENCY / 3)); // 收尾重试并发数
 const PROGRESS_BAR_WIDTH = 24; // 下载进度条宽度
 
+// 简单包一层终端颜色。
+function colorize(code, text) {
+  return `\u001b[${code}m${text}\u001b[0m`;
+}
+
 const httpClient = axios.create({
   timeout: REQUEST_TIMEOUT,
   httpsAgent: new https.Agent({
@@ -186,7 +191,7 @@ async function getAllPngFiles() {
   const total = subDirs.length;
   const SCAN_CONCURRENCY = 10; // 目录扫描并发数
   const scanBar = createProgressBar(
-    "   扫描: {bar} {percentage}% | {value}/{total} | 已找到 {found} 个 PNG 文件",
+    `${colorize(36, "   扫描: {bar}")} ${colorize(33, "{percentage}%")} | ${colorize(33, "{value}/{total}")} | 已找到 ${colorize(32, "{found}")} 个 PNG 文件 | 用时 ${colorize(35, "{duration_formatted}")} | 剩余 ${colorize(36, "{eta_formatted}")}`,
   );
 
   const pool = [];
@@ -343,7 +348,7 @@ async function downloadAll(fileKeys) {
   const skippedFiles = [];
   let failedFiles = [];
   const downloadBar = createProgressBar(
-    "  进度: {bar} {percentage}% | {value}/{total} | 下载: {downloaded} | 跳过: {skipped} (已存在 {skippedExisting}) | 失败: {failed}",
+    `${colorize(32, "  进度: {bar}")} ${colorize(33, "{percentage}%")} | ${colorize(33, "{value}/{total}")} | 下载: ${colorize(32, "{downloaded}")} | 跳过: ${colorize(34, "{skipped}")} (已存在 ${colorize(36, "{skippedExisting}")}) | 失败: ${colorize(31, "{failed}")} | 用时 ${colorize(35, "{duration_formatted}")} | 剩余 ${colorize(36, "{eta_formatted}")}`,
   );
 
   // 使用简单的并发池
