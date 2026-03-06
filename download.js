@@ -1,4 +1,5 @@
 const axios = require("axios");
+const cliProgress = require("cli-progress");
 const { XMLParser } = require("fast-xml-parser");
 const fs = require("fs");
 const https = require("https");
@@ -14,6 +15,7 @@ const MAX_RETRIES = 5; // 最大重试次数
 const MAX_KEYS = 500; // 每次 API 请求返回的最大数量
 const REQUEST_TIMEOUT = 30000; // 单次请求超时时间
 const RETRY_CONCURRENCY = Math.max(3, Math.floor(CONCURRENCY / 3)); // 收尾重试并发数
+const PROGRESS_BAR_WIDTH = 24; // 下载进度条宽度
 
 const httpClient = axios.create({
   timeout: REQUEST_TIMEOUT,
@@ -33,13 +35,24 @@ const parser = new XMLParser({
   isArray: (name) => ["CommonPrefixes", "Contents"].includes(name),
 });
 
+// 等待指定的毫秒数。
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * 调用 S3 ListObjectsV2 API 获取目录内容
- */
+// 创建统一样式的单行进度条。
+function createProgressBar(format) {
+  return new cliProgress.SingleBar({
+    format,
+    hideCursor: true,
+    clearOnComplete: false,
+    barsize: PROGRESS_BAR_WIDTH,
+    barCompleteChar: "█",
+    barIncompleteChar: "░",
+  });
+}
+
+// 请求对象存储的文件列表。
 async function listObjects(prefix, continuationToken, delimiter = "/", startAfter) {
   const params = {
     "list-type": "2",
@@ -64,9 +77,7 @@ async function listObjects(prefix, continuationToken, delimiter = "/", startAfte
   return parser.parse(response.data).ListBucketResult;
 }
 
-/**
- * 获取指定前缀下的所有子目录（使用 start-after 分页，避开源站 continuation-token 缺陷）
- */
+// 拉取背景图目录列表。
 async function getAllSubDirs(prefix) {
   const dirs = [];
   let startAfter = undefined;
@@ -95,9 +106,7 @@ async function getAllSubDirs(prefix) {
   return dirs;
 }
 
-/**
- * 获取指定目录下的所有 PNG 文件
- */
+// 拉取单个目录里的 PNG 文件。
 async function getPngFilesInDir(prefix) {
   const files = [];
   let token = undefined;
@@ -120,11 +129,13 @@ async function getPngFilesInDir(prefix) {
   return files;
 }
 
+// 给重名文件追加序号后缀。
 function addDuplicateSuffix(fileName, index) {
   const parsed = path.parse(fileName);
   return `${parsed.name}(${index})${parsed.ext}`;
 }
 
+// 为重名文件分配唯一文件名。
 function assignFileNames(files) {
   const reservedNames = new Set(
     files.map((fileInfo) => path.basename(fileInfo.key)),
@@ -163,9 +174,7 @@ function assignFileNames(files) {
   return files;
 }
 
-/**
- * 获取所有背景图 PNG 文件列表（并发扫描目录）
- */
+// 并发扫描全部背景图文件。
 async function getAllPngFiles() {
   console.log("[1/3] 正在获取背景图目录列表...");
   const subDirs = await getAllSubDirs(PREFIX);
@@ -176,16 +185,18 @@ async function getAllPngFiles() {
   let scanned = 0;
   const total = subDirs.length;
   const SCAN_CONCURRENCY = 10; // 目录扫描并发数
-
-  function printScanProgress() {
-    process.stdout.write(
-      `\r   已扫描 ${scanned}/${total} 个目录，找到 ${allFiles.length} 个 PNG 文件`,
-    );
-  }
+  const scanBar = createProgressBar(
+    "   扫描: {bar} {percentage}% | {value}/{total} | 已找到 {found} 个 PNG 文件",
+  );
 
   const pool = [];
   let dirIndex = 0;
 
+  if (total > 0) {
+    scanBar.start(total, 0, { found: 0 });
+  }
+
+  // 继续领取下一个目录扫描任务。
   function nextScan() {
     if (dirIndex >= total) return Promise.resolve();
     const currentDir = subDirs[dirIndex++];
@@ -193,8 +204,8 @@ async function getAllPngFiles() {
     return getPngFilesInDir(currentDir).then((files) => {
       allFiles.push(...files);
       scanned++;
-      if (scanned % 20 === 0 || scanned === total) {
-        printScanProgress();
+      if (total > 0) {
+        scanBar.update(scanned, { found: allFiles.length });
       }
       return nextScan();
     });
@@ -205,17 +216,16 @@ async function getAllPngFiles() {
   }
   await Promise.all(pool);
 
-  printScanProgress();
-  console.log(""); // 换行
+  if (total > 0) {
+    scanBar.stop();
+  }
 
   return assignFileNames(allFiles);
 }
 
 // 下载逻辑
 
-/**
- * 下载单个文件（支持重试）
- */
+// 下载单个文件并按需重试。
 async function downloadFile(fileInfo, retries = 0) {
   const fileName = fileInfo.file;
   const filePath = path.join(OUTPUT_DIR, fileName);
@@ -227,6 +237,7 @@ async function downloadFile(fileInfo, retries = 0) {
     if (localSize === fileInfo.size) {
       return {
         status: "skipped",
+        reason: "existing",
         file: fileName,
         localSize,
         size: fileInfo.size,
@@ -267,20 +278,29 @@ async function downloadFile(fileInfo, retries = 0) {
   }
 }
 
+// 对失败文件做一轮低并发补重试。
 async function retryFailedFiles(failedFiles) {
   if (failedFiles.length === 0) {
-    return { downloaded: 0, skipped: 0, skippedFiles: [], failedFiles: [] };
+    return {
+      downloaded: 0,
+      skipped: 0,
+      skippedExisting: 0,
+      skippedFiles: [],
+      failedFiles: [],
+    };
   }
 
   await sleep(2000);
 
   let downloaded = 0;
   let skipped = 0;
+  let skippedExisting = 0;
   const skippedFiles = [];
   const remainingFailedFiles = [];
   const pool = [];
   let index = 0;
 
+  // 继续领取下一个失败文件补重试任务。
   function next() {
     if (index >= failedFiles.length) return Promise.resolve();
     const currentFile = failedFiles[index++];
@@ -289,6 +309,7 @@ async function retryFailedFiles(failedFiles) {
       if (result.status === "downloaded") downloaded++;
       else if (result.status === "skipped") {
         skipped++;
+        if (result.reason === "existing") skippedExisting++;
         skippedFiles.push(result);
       }
       else remainingFailedFiles.push(result);
@@ -302,31 +323,52 @@ async function retryFailedFiles(failedFiles) {
 
   await Promise.all(pool);
 
-  return { downloaded, skipped, skippedFiles, failedFiles: remainingFailedFiles };
+  return {
+    downloaded,
+    skipped,
+    skippedExisting,
+    skippedFiles,
+    failedFiles: remainingFailedFiles,
+  };
 }
 
-/**
- * 并发控制的批量下载
- */
+// 并发下载全部文件并汇总结果。
 async function downloadAll(fileKeys) {
   let completed = 0;
   let downloaded = 0;
   let skipped = 0;
+  let skippedExisting = 0;
   let failed = 0;
   const total = fileKeys.length;
   const skippedFiles = [];
   let failedFiles = [];
-
-  function printProgress() {
-    process.stdout.write(
-      `\r  进度: ${completed}/${total} | 下载: ${downloaded} | 跳过: ${skipped} | 失败: ${failed}`,
-    );
-  }
+  const downloadBar = createProgressBar(
+    "  进度: {bar} {percentage}% | {value}/{total} | 下载: {downloaded} | 跳过: {skipped} (已存在 {skippedExisting}) | 失败: {failed}",
+  );
 
   // 使用简单的并发池
   const pool = [];
   let index = 0;
 
+  if (total === 0) {
+    return {
+      downloaded,
+      skipped,
+      skippedExisting,
+      skippedFiles,
+      failed,
+      failedFiles,
+    };
+  }
+
+  downloadBar.start(total, 0, {
+    downloaded,
+    skipped,
+    skippedExisting,
+    failed,
+  });
+
+  // 继续领取下一个下载任务。
   function next() {
     if (index >= total) return Promise.resolve();
     const currentIndex = index++;
@@ -337,13 +379,19 @@ async function downloadAll(fileKeys) {
       if (result.status === "downloaded") downloaded++;
       else if (result.status === "skipped") {
         skipped++;
+        if (result.reason === "existing") skippedExisting++;
         skippedFiles.push(result);
       }
       else if (result.status === "failed") {
         failed++;
         failedFiles.push(result);
       }
-      printProgress();
+      downloadBar.update(completed, {
+        downloaded,
+        skipped,
+        skippedExisting,
+        failed,
+      });
       return next();
     });
   }
@@ -359,24 +407,34 @@ async function downloadAll(fileKeys) {
     const retryResult = await retryFailedFiles(failedFiles);
     downloaded += retryResult.downloaded;
     skipped += retryResult.skipped;
+    skippedExisting += retryResult.skippedExisting;
     skippedFiles.push(...retryResult.skippedFiles);
     failedFiles = retryResult.failedFiles;
     failed = failedFiles.length;
-    printProgress();
+    downloadBar.update(total, {
+      downloaded,
+      skipped,
+      skippedExisting,
+      failed,
+    });
   }
 
-  console.log(""); // 换行
+  downloadBar.stop();
 
-  return { downloaded, skipped, skippedFiles, failed, failedFiles };
+  return {
+    downloaded,
+    skipped,
+    skippedExisting,
+    skippedFiles,
+    failed,
+    failedFiles,
+  };
 }
 
 // 主流程
 
+// 运行下载主流程。
 async function main() {
-  console.log("========================================");
-  console.log("  Sekai 背景图批量下载工具");
-  console.log("========================================\n");
-
   // 1. 创建输出目录
   if (!fs.existsSync(OUTPUT_DIR)) {
     fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -404,13 +462,11 @@ async function main() {
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
   // 5. 输出结果
-  console.log("\n========================================");
-  console.log("  下载完成!");
-  console.log("========================================");
-  console.log(`  耗时: ${elapsed}s`);
-  console.log(`  成功下载: ${result.downloaded}`);
-  console.log(`  已跳过: ${result.skipped}`);
-  console.log(`  下载失败: ${result.failed}`);
+  console.log("\n下载完成!");
+  console.log(`耗时: ${elapsed}s`);
+  console.log(`成功下载: ${result.downloaded}`);
+  console.log(`已跳过: ${result.skipped} (已存在 ${result.skippedExisting})`);
+  console.log(`下载失败: ${result.failed}`);
 
   if (result.skippedFiles.length > 0) {
     console.log("\n已跳过文件列表:");
@@ -429,6 +485,7 @@ async function main() {
   }
 }
 
+// 等待用户回车后退出程序。
 function waitForExit() {
   return new Promise((resolve) => {
     console.log("\n按回车键退出...");
