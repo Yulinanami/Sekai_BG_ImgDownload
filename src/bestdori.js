@@ -26,14 +26,14 @@ function askQuestion(rl, prompt) {
 
 // 让用户输入起止编号
 async function promptRange(rl) {
-  const startRaw = await askQuestion(rl, `请输入起始 scenario 编号（默认 ${DEFAULT_START}）: `);
+  const startRaw = await askQuestion(rl, `请输入起始 scenario 编号（回车使用默认值 ${DEFAULT_START}）: `);
   let start = startRaw.trim() ? parseInt(startRaw.trim(), 10) : DEFAULT_START;
   if (isNaN(start) || start < 0) {
     console.log(`输入无效，使用默认值 ${DEFAULT_START}`);
     start = DEFAULT_START;
   }
 
-  const endRaw = await askQuestion(rl, `请输入结束 scenario 编号（默认 ${DEFAULT_END}）: `);
+  const endRaw = await askQuestion(rl, `请输入结束 scenario 编号（回车使用默认值 ${DEFAULT_END}）: `);
   let end = endRaw.trim() ? parseInt(endRaw.trim(), 10) : DEFAULT_END;
   if (isNaN(end) || end < 0) {
     console.log(`输入无效，使用默认值 ${DEFAULT_END}`);
@@ -78,7 +78,7 @@ async function run(outputDir) {
 
     const { start, end } = await promptRange(rl);
 
-    const choiceRaw = await askQuestion(rl, "按 scenario 分目录保存? (默认关闭，输入Y/y开启): ");
+    const choiceRaw = await askQuestion(rl, "按 scenario 分目录保存? (回车默认关闭，输入Y/y开启): ");
     const splitByScenario = choiceRaw.trim().toLowerCase() === "y";
 
     rl.close();

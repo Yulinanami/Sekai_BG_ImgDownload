@@ -310,7 +310,13 @@ async function downloadAll(fileTasks, options = {}) {
 function waitForExit() {
   return new Promise((resolve) => {
     console.log("\n按回车键退出...");
-    process.stdin.once("data", resolve);
+    const readline = require("readline");
+    process.stdin.resume();
+    const rl = readline.createInterface({ input: process.stdin });
+    rl.once("line", () => {
+      rl.close();
+      resolve();
+    });
   });
 }
 
